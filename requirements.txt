@@ -1,0 +1,8 @@
+confluent-kafka==2.5.3
+psycopg2-binary==2.9.9
+pyspark==3.5.1
+pandas==2.2.2
+pyarrow==17.0.0
+fastapi==0.115.0
+uvicorn==0.30.6
+python-dateutil==2.9.0

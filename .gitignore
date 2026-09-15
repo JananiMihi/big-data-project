@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+data/
+!data/.gitkeep
+*.egg-info/
+.ipynb_checkpoints/
+spark-warehouse/
+derby.log
+metastore_db/
+.DS_Store
