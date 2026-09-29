@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fleet Dashboard</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: linear-gradient(135deg, #0f172a, #111827);
+        color: #e5e7eb;
+      }
+      .container {
+        max-width: 900px;
+        margin: 40px auto;
+        padding: 24px;
+      }
+      .card {
+        background: rgba(17, 24, 39, 0.9);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 12px;
+        padding: 18px 20px;
+        margin-bottom: 16px;
+        box-shadow: 0 10px 22px rgba(0,0,0,0.24);
+      }
+      h1 {
+        margin-top: 0;
+      }
+      .status {
+        display: inline-block;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(34, 197, 94, 0.16);
+        color: #86efac;
+        font-weight: bold;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+      }
+      .metric {
+        background: rgba(15, 23, 42, 0.7);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 10px;
+        padding: 16px;
+      }
+      .label {
+        color: #94a3b8;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+      }
+      .value {
+        font-size: 1.8rem;
+        margin-top: 8px;
+        font-weight: bold;
+      }
+      ul {
+        list-style: none;
+        padding: 0;
+        margin: 12px 0 0;
+      }
+      li {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <h1>Fleet Operations Dashboard</h1>
+        <span class="status">System Healthy</span>
+      </div>
+
+      <div class="grid">
+        <div class="metric">
+          <div class="label">Last telemetry</div>
+          <div class="value" id="lastTelemetry">--</div>
+        </div>
+        <div class="metric">
+          <div class="label">Active zones</div>
+          <div class="value" id="zoneCount">0</div>
+        </div>
+        <div class="metric">
+          <div class="label">Open alerts</div>
+          <div class="value" id="alertCount">0</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Realtime Zones</h3>
+        <ul id="zoneList">
+          <li><span>Waiting for data...</span></li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Recent Alerts</h3>
+        <ul id="alertList">
+          <li><span>No alerts yet</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <script>
+      async function loadData() {
+        try {
+          const health = await fetch('/health');
+          const healthJson = await health.json();
+          document.getElementById('lastTelemetry').textContent = healthJson.most_recent_telemetry || 'No telemetry';
+
+          const metrics = await fetch('/metrics/realtime');
+          const metricsJson = await metrics.json();
+          const zones = metricsJson.zones || [];
+          document.getElementById('zoneCount').textContent = String(zones.length);
+          const zoneList = document.getElementById('zoneList');
+          zoneList.innerHTML = zones.length
+            ? zones.map(z => `<li><span>${z.zone}</span><strong>${z.avg_utilization ?? '--'}%</strong></li>`).join('')
+            : '<li><span>No zone data yet</span></li>';
+
+          const alertsRes = await fetch('/alerts');
+          const alertsJson = await alertsRes.json();
+          const alerts = alertsJson.alerts || [];
+          document.getElementById('alertCount').textContent = String(alerts.length);
+          const alertList = document.getElementById('alertList');
+          alertList.innerHTML = alerts.length
+            ? alerts.slice(0, 5).map(a => `<li><span>${a.alert_type}</span><strong>${a.severity}</strong></li>`).join('')
+            : '<li><span>No alerts yet</span></li>';
+        } catch (err) {
+          document.getElementById('lastTelemetry').textContent = 'Unavailable';
+          document.getElementById('zoneCount').textContent = '0';
+          document.getElementById('alertCount').textContent = '0';
+          document.getElementById('zoneList').innerHTML = '<li><span>API unavailable</span></li>';
+          document.getElementById('alertList').innerHTML = '<li><span>Check Kafka/Postgres</span></li>';
+        }
+      }
+
+      loadData();
+      setInterval(loadData, 15000);
+    </script>
+  </body>
+</html>

@@ -9,15 +9,23 @@ Run:
     uvicorn serving.api:app --reload --port 8000
 """
 import logging
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import HTMLResponse
 
 from common.db import cursor
 from common.logging_utils import get_logger, log
 
 logger = get_logger("serving.api")
 app = FastAPI(title="Fleet Operations API", version="1.0")
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard_page():
+    dashboard_path = Path(__file__).resolve().parent / "dashboard.html"
+    return dashboard_path.read_text(encoding="utf-8")
 
 
 @app.middleware("http")
