@@ -11,51 +11,9 @@ assignment brief.
 
 ## Architecture
 
-```
-                         ┌─────────────────────┐
- sources/                │   Kafka              │
- streaming_source.py ───▶│ fleet.telemetry      │
- (GPS/status every 2s)   │  (3 partitions,      │
-                         │   keyed by vehicle)  │
-                         └──────────┬───────────┘
-                                    │
-                    ┌───────────────▼────────────────┐
-                    │  SPEED LAYER (Spark Structured  │
-                    │  Streaming, processing/          │
-                    │  speed_layer.py)                 │
-                    │  - clean + zone-enrich            │
-                    │  - 1-min windowed utilization      │
-                    │  - latest per-vehicle state         │
-                    └───────┬───────────────┬───────────┘
-                            │               │
-              ┌─────────────▼───┐   ┌───────▼────────────────┐
-              │ Postgres         │   │ Parquet data lake        │
-              │ realtime_        │   │ data/parquet_lake/trips/ │
-              │ utilization,     │   │  (partitioned by date -   │
-              │ vehicle_status_  │   │   master dataset, stands   │
-              │ current          │   │   in for HDFS/S3)          │
-              └────────┬─────────┘   └───────────┬────────────────┘
-                       │                          │
- sources/               │           ┌──────────────▼───────────────┐
- batch_source.py ───────┼──────────▶│  BATCH LAYER (Airflow DAG,     │
- (1 CSV/simulated day)  │  CSV file │  airflow_dags/daily_           │
-                        │           │  reconciliation_dag.py)         │
-                        │           │  joins day's trips + expenses   │
-                        │           └──────────────┬───────────────────┘
-                        │                          │
-                        │            ┌──────────────▼──────────────┐
-                        │            │ Postgres                      │
-                        │            │ profitability_reconciliation  │
-                        │            └──────────────┬─────────────────┘
-                        │                            │
-              ┌─────────▼────────────────────────────▼───┐
-              │  SERVING LAYER (FastAPI, serving/api.py)    │
-              │  /metrics/realtime  /report/daily  /alerts   │
-              └───────────────────────────────────────────────┘
+![Figure 1: Fleet Operations Data Pipeline](media/figure%201.png)
 
- processing/health_check.py polls Postgres every 30s and raises alerts
- (stale telemetry, vehicle idle too long) — the observability layer.
-```
+Figure 1. Fleet Operations Data Pipeline architecture showing the streaming, batch, and serving layers with observability checks.
 
 ## What's included
 
@@ -164,49 +122,6 @@ The Airflow scheduler (running inside the `airflow` container) picks up
 each new file `sources.batch_source` drops into `data/batch_drops/` and
 reconciles it against that day's trips archived by the speed layer.
 
-## 7-Minute Live Demo
-
-Do the startup before the presentation; Docker's first Airflow migration can
-take a few minutes. Keep the streaming source, Spark speed layer, health check,
-and API running in separate terminals, following the commands above. Unpause
-the DAG before the demo:
-
-```powershell
-docker compose up -d
-py setup_topics.py
-docker exec fleet-airflow airflow dags unpause daily_fleet_reconciliation
-```
-
-Check `docker compose ps`, then verify that `/health` has a recent telemetry
-timestamp and `/metrics/realtime` returns zones. The Airflow web UI is at
-http://localhost:8080. The API dashboard is at http://localhost:8000/dashboard.
-
-| Time | Demonstration |
-|---|---|
-| 0:00-1:00 | Use the architecture diagram above to introduce Kafka, the Spark speed layer, the Parquet lake, the Airflow batch layer, Postgres, and the API. |
-| 1:00-3:00 | Open `/dashboard`. Show the changing telemetry timestamp, active zones, trips, earnings, and alerts. Briefly show the Spark terminal's micro-batch logs to connect incoming Kafka events to the metrics. |
-| 3:00-4:00 | Show `/health` and `/alerts` in `/docs` or the browser. Explain the 30-second health-check interval, the 2-minute stale-data threshold, and the 3-minute idle threshold. |
-| 4:00-6:00 | Generate one expense file and manually trigger reconciliation. Show the DAG run in Airflow and wait for both tasks to succeed. |
-| 6:00-7:00 | Query the daily report and summarize vehicle count, unprofitable count, and total net profit. Close by tying the batch result and the real-time dashboard back to the two Lambda paths. |
-
-For the batch step, run this from the project folder in PowerShell; the CSV is
-created immediately for today's simulated date:
-
-```powershell
-py -m sources.batch_source --days 1 --day-seconds 1
-docker exec fleet-airflow airflow dags trigger daily_fleet_reconciliation
-```
-
-After the Airflow tasks succeed, fetch today's reconciliation report:
-
-```powershell
-$demoDate = Get-Date -Format 'yyyy-MM-dd'
-Invoke-RestMethod "http://localhost:8000/report/daily?date=$demoDate" | ConvertTo-Json -Depth 5
-```
-
-Alerts are stored in the database and are not automatically resolved when
-telemetry resumes. When presenting `/alerts`, describe entries as recorded
-alerts; use `/health` to show whether telemetry is currently arriving.
 
 ### Try the API
 
@@ -217,39 +132,3 @@ curl "http://localhost:8000/alerts"
 curl "http://localhost:8000/report/daily?date=2026-09-14"
 ```
 
-## Simulated clock
-
-One simulated "day" = `SIMULATED_DAY_SECONDS` real seconds (default **300s /
-5 minutes**, overridable via env var or `--day-seconds`). The batch source
-labels each drop with a calendar date starting today and incrementing by one
-day per drop, so the reconciliation report for a given date is keyed the
-same way a real daily feed would be.
-
-## Configuration
-
-All tunables live in [`common/config.py`](common/config.py) and are
-overridable via environment variables (Kafka bootstrap servers, Postgres
-connection, fleet size, window duration, alert thresholds, etc.) — see that
-file for the full list and defaults.
-
-## Observability
-
-- Every component logs structured JSON (one object per line, tagged with a
-  `stage` field) via [`common/logging_utils.py`](common/logging_utils.py).
-- `processing/health_check.py` polls the serving store every
-  `HEALTH_CHECK_INTERVAL_SECONDS` (default 30s) and raises two rules into
-  the `alerts` table: no telemetry received in `STALE_DATA_ALERT_MINUTES`,
-  and a vehicle idle for longer than `IDLE_ALERT_MINUTES`. Alerts are
-  deduplicated for `ALERT_DEDUPE_MINUTES` so a standing condition doesn't
-  spam new rows every poll.
-- The batch DAG also raises a `batch_data_quality` alert when a vehicle is
-  billed expenses for a day with zero recorded trips.
-
-## Limitations / assumptions
-
-See "Limitations, trade-offs" in [`REPORT.md`](REPORT.md). In short: the
-local filesystem stands in for HDFS/S3 (swap `PARQUET_LAKE_DIR` for an S3
-path + s3a:// connector for production), Spark runs in local mode via
-`spark-submit` rather than a managed cluster, and vehicle-state counts
-within a window are "seen at least once in that state" rather than
-time-weighted.
