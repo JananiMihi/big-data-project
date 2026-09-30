@@ -120,7 +120,7 @@
           document.getElementById('zoneCount').textContent = String(zones.length);
           const zoneList = document.getElementById('zoneList');
           zoneList.innerHTML = zones.length
-            ? zones.map(z => `<li><span>${z.zone}</span><strong>${z.avg_utilization ?? '--'}%</strong></li>`).join('')
+            ? zones.map(z => `<li><span>${z.zone} · ${z.active_vehicles} active · ${z.trips_in_window} trips</span><strong>$${Number(z.earnings_in_window).toFixed(2)}</strong></li>`).join('')
             : '<li><span>No zone data yet</span></li>';
 
           const alertsRes = await fetch('/alerts');

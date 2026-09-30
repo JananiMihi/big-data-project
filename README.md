@@ -85,8 +85,13 @@ python -m pip install -r requirements.txt
 You need a JVM available on PATH for Spark (`java -version`). Docker is
 strongly recommended for Kafka, Postgres and Airflow:
 
-```bash
-docker compose up -d
+```powershell
+# After downloading the Spark binary archive on Windows
+tar -xzf "C:\spark-downloads\spark-3.5.1-bin-hadoop3.tgz" -C "C:\"
+Rename-Item "C:\spark-3.5.1-bin-hadoop3" "spark"
+$env:SPARK_HOME = "C:\spark"
+$env:Path = "$env:SPARK_HOME\bin;$env:Path"
+spark-submit --version
 ```
 
 The Postgres schema in `storage/init_db.sql` is applied automatically on
@@ -129,7 +134,18 @@ python -m sources.batch_source
 ```
 
 **Terminal 3 — speed layer (Spark):**
+```powershell
+# Windows PowerShell; repeat these settings in each new terminal
+$env:SPARK_HOME = "C:\spark"
+$env:Path = "$env:SPARK_HOME\bin;$env:Path"
+$env:PYSPARK_PYTHON = (py -c "import sys; print(sys.executable)")
+$env:PYSPARK_DRIVER_PYTHON = $env:PYSPARK_PYTHON
+$env:PYTHONPATH = "$PWD;$env:PYTHONPATH"
+spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1 processing/speed_layer.py
+```
+
 ```bash
+# macOS/Linux
 spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1 processing/speed_layer.py
 ```
 
@@ -147,6 +163,50 @@ uvicorn serving.api:app --port 8000
 The Airflow scheduler (running inside the `airflow` container) picks up
 each new file `sources.batch_source` drops into `data/batch_drops/` and
 reconciles it against that day's trips archived by the speed layer.
+
+## 7-Minute Live Demo
+
+Do the startup before the presentation; Docker's first Airflow migration can
+take a few minutes. Keep the streaming source, Spark speed layer, health check,
+and API running in separate terminals, following the commands above. Unpause
+the DAG before the demo:
+
+```powershell
+docker compose up -d
+py setup_topics.py
+docker exec fleet-airflow airflow dags unpause daily_fleet_reconciliation
+```
+
+Check `docker compose ps`, then verify that `/health` has a recent telemetry
+timestamp and `/metrics/realtime` returns zones. The Airflow web UI is at
+http://localhost:8080. The API dashboard is at http://localhost:8000/dashboard.
+
+| Time | Demonstration |
+|---|---|
+| 0:00-1:00 | Use the architecture diagram above to introduce Kafka, the Spark speed layer, the Parquet lake, the Airflow batch layer, Postgres, and the API. |
+| 1:00-3:00 | Open `/dashboard`. Show the changing telemetry timestamp, active zones, trips, earnings, and alerts. Briefly show the Spark terminal's micro-batch logs to connect incoming Kafka events to the metrics. |
+| 3:00-4:00 | Show `/health` and `/alerts` in `/docs` or the browser. Explain the 30-second health-check interval, the 2-minute stale-data threshold, and the 3-minute idle threshold. |
+| 4:00-6:00 | Generate one expense file and manually trigger reconciliation. Show the DAG run in Airflow and wait for both tasks to succeed. |
+| 6:00-7:00 | Query the daily report and summarize vehicle count, unprofitable count, and total net profit. Close by tying the batch result and the real-time dashboard back to the two Lambda paths. |
+
+For the batch step, run this from the project folder in PowerShell; the CSV is
+created immediately for today's simulated date:
+
+```powershell
+py -m sources.batch_source --days 1 --day-seconds 1
+docker exec fleet-airflow airflow dags trigger daily_fleet_reconciliation
+```
+
+After the Airflow tasks succeed, fetch today's reconciliation report:
+
+```powershell
+$demoDate = Get-Date -Format 'yyyy-MM-dd'
+Invoke-RestMethod "http://localhost:8000/report/daily?date=$demoDate" | ConvertTo-Json -Depth 5
+```
+
+Alerts are stored in the database and are not automatically resolved when
+telemetry resumes. When presenting `/alerts`, describe entries as recorded
+alerts; use `/health` to show whether telemetry is currently arriving.
 
 ### Try the API
 

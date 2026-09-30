@@ -74,10 +74,12 @@ services:
       - .:/opt/airflow/project
       - ./airflow_dags:/opt/airflow/dags
     command: >
-      bash -c "pip install --no-cache-dir -q psycopg2-binary==2.9.9 pandas==2.2.2 pyarrow==17.0.0 &&
-               airflow db migrate &&
-               airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true &&
-               airflow scheduler & airflow webserver"
+      bash -c "set -e;
+               pip install --no-cache-dir -q psycopg2-binary==2.9.9 pandas==2.2.2 pyarrow==17.0.0;
+               airflow db migrate;
+               airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true;
+               airflow scheduler &
+               exec airflow webserver"
 
 volumes:
   kafka-data:
