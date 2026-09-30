@@ -5,9 +5,7 @@ Fleet Operations** — live fleet utilization/earnings by zone, reconciled daily
 against per-vehicle fuel/maintenance costs to flag vehicles that are becoming
 unprofitable.
 
-See [`REPORT.md`](REPORT.md) for the architecture decision (Lambda vs Kappa),
-tech-stack justification, and observability design write-up required by the
-assignment brief.
+
 
 ## Architecture
 
